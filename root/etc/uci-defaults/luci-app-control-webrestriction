@@ -1,11 +1,37 @@
 #!/bin/sh
 
-uci -q batch <<-EOF >/dev/null
-	delete ucitrack.@webrestriction[-1]
-	add ucitrack webrestriction
-	set ucitrack.@webrestriction[-1].init=webrestriction
-	commit ucitrack
+# 严格模式：捕捉未定义变量/管道错误/命令失败
+set -euo pipefail
+
+# 定义常量
+TRACK_NAME="webrestriction"
+INIT_SCRIPT="/etc/init.d/${TRACK_NAME}"
+CACHE_DIR="/tmp"
+
+# 清理旧的 ucitrack 条目 (精确匹配名称)
+uci -q batch <<EOF
+delete ucitrack.${TRACK_NAME}
+commit
 EOF
 
-rm -f /tmp/luci-indexcache
+# 添加新的 ucitrack 配置
+if ! uci -q batch <<EOF
+add ucitrack ${TRACK_NAME}
+set ucitrack.${TRACK_NAME}.init="${TRACK_NAME}"
+commit ucitrack
+EOF
+then
+    echo "uci配置失败! 错误码: $?" >&2
+    exit 1
+fi
+
+# 彻底清理 LuCI 缓存
+find "${CACHE_DIR}" -maxdepth 1 -name 'luci-*cache' -exec rm -f {} +
+
+# 重载服务配置 (可选)
+#if [ -x "${INIT_SCRIPT}" ]; then
+#    "${INIT_SCRIPT}" enable
+#    "${INIT_SCRIPT}" restart
+#fi
+
 exit 0
